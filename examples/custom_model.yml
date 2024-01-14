@@ -122,3 +122,6 @@ custom_positive_train: "./custom_positive_train"
 
 # Path to clips which will be added to positive test features file on `--augment_clips` step.
 custom_positive_test: "./custom_positive_test"
+
+# Cpu max usage. Range from 0 to 1
+cpu_max_load: 0.5
