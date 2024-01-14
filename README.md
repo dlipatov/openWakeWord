@@ -3,6 +3,10 @@ Also can be used to train wake words for any non-english TTS models exported fro
 
 # Added new config keys
 
+*piper_max_speakers*: - To set max speakers when calling piper-sample-generator. Used to work with [forked repo](https://github.com/dlipatov/piper-sample-generator)
+
+*piper_model_path*: - Path to custom tts model file for piper-sample-generator.
+
 *feature_data_clips*: - Paths to clips from which to generate audio features and append them to `feature_data_files` setting.
 
 *false_positive_validation_clips*: Path to clips from which generate false positive features file and update `false_positive_validation_data_path` setting.
