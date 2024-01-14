@@ -27,6 +27,8 @@ share/python-wheels/
 *.egg
 my_custom_model/
 MANIFEST
+.vscode/
+resources/
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
