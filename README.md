@@ -1,3 +1,6 @@
+This fork is used to train wake word for home-assistant with piper-sample-generator fork for russian-speaking [TTS model](https://github.com/dlipatov/piper-sample-generator)
+Also can be used to train wake words for any non-english TTS models exported from [checkpoint](https://huggingface.co/datasets/rhasspy/piper-checkpoints/tree/main)
+
 ![Github CI](https://github.com/dscripka/openWakeWord/actions/workflows/tests.yml/badge.svg)
 
 # openWakeWord
