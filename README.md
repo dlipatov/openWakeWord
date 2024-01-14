@@ -1,5 +1,19 @@
 This fork is used to train wake word for home-assistant with piper-sample-generator fork for russian-speaking [TTS model](https://github.com/dlipatov/piper-sample-generator)
 Also can be used to train wake words for any non-english TTS models exported from [checkpoint](https://huggingface.co/datasets/rhasspy/piper-checkpoints/tree/main)
+Added new config keys:
+
+
+*feature_data_clips*: - Paths to clips from which to generate audio features and append them to `feature_data_files` setting.
+
+*false_positive_validation_clips*: Path to clips from which generate false positive features file and update `false_positive_validation_data_path` setting.
+
+*skip_generated_adversarial_texts*: Boolean value - False to skip generation of adversarial texts because it works for english only. It's required to add some `custom_negative_phrases` when this setting is set to False.
+
+*preferred_device*: Select preferred device and ignore 'cuda' even if it is available.
+
+*custom_positive_train*: Path to clips which will be added to positive train features file on `--augment_clips` step.
+
+*custom_positive_test*: Path to clips which will be added to positive test features file on `--augment_clips` step.
 
 ![Github CI](https://github.com/dscripka/openWakeWord/actions/workflows/tests.yml/badge.svg)
 
