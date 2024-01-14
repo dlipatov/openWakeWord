@@ -1,7 +1,7 @@
 This fork is used to train wake word for home-assistant with piper-sample-generator fork for russian-speaking [TTS model](https://github.com/dlipatov/piper-sample-generator)
 Also can be used to train wake words for any non-english TTS models exported from [checkpoint](https://huggingface.co/datasets/rhasspy/piper-checkpoints/tree/main)
-Added new config keys:
 
+# Added new config keys
 
 *feature_data_clips*: - Paths to clips from which to generate audio features and append them to `feature_data_files` setting.
 
@@ -14,6 +14,22 @@ Added new config keys:
 *custom_positive_train*: Path to clips which will be added to positive train features file on `--augment_clips` step.
 
 *custom_positive_test*: Path to clips which will be added to positive test features file on `--augment_clips` step.
+
+*cpu_max_load*: Cpu max usage. Range from 0 to 1.
+
+# Added new steps to train.py
+
+### Compute features 
+Will compute features from folders and create .npy files. Also will update model config setting `feature_data_files` with new keys.
+```
+python3 ./openwakeword/train.py --compute_features
+```
+
+### Compute false positive features 
+Will compute false positive validation features from folder and create .npy file. Also will update model config setting `false_positive_validation_data_path` with new path.
+```
+python3 ./openwakeword/train.py --compute_false_positive
+```
 
 ![Github CI](https://github.com/dscripka/openWakeWord/actions/workflows/tests.yml/badge.svg)
 
