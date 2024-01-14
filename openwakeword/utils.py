@@ -269,8 +269,9 @@ class AudioFeatures():
                 result = self._get_melspectrogram(batch)
 
             elif pool:
+                chunksize = batch.shape[0]//ncpu if batch.shape[0]>=ncpu else 1
                 result = np.array(pool.map(self._get_melspectrogram,
-                                           batch, chunksize=batch.shape[0]//ncpu))
+                                           batch, chunksize=chunksize))
 
             melspecs[i:i+batch_size, :, :] = result.squeeze()
 
