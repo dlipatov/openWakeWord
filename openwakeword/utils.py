@@ -591,6 +591,136 @@ def compute_features_from_generator(generator, n_total, clip_duration, output_fi
     # Trip empty rows from the mmapped array
     trim_mmap(output_file)
 
+def compute_features_from_clips(clips, durations, clip_duration, output_file, batch_size=128, sr=16000, device="cpu", ncpu=1):
+    """
+    Computes audio features from a list of clips paths that produces Numpy arrays of shape (batch_size, samples)
+    containing 16-bit PCM audio data.
+
+    Args:
+        clips_paths : Array of clips paths.
+        clip_duration (float): The duration (in samples) of the audio produced by the generator.
+        output_file (str): The output file (.npy) containing the audio features. Note that this file
+                           will be written to using memmap arrays, so it can be substantially larger
+                           than the available system memory.
+        batch_size (int): The number of files to load, compute features, and write to mmap at a time.
+        sr (int): The sampling rate.
+        device (str): The device ("cpu" or "gpu") to use for computing features.
+        ncpu (int): The number of cores to use when process the audio features (if computing on CPU)
+
+    Returns:
+        None
+    """    
+    import datasets
+    from openwakeword.data import stack_clips
+    
+    F = AudioFeatures()
+    # Use HuggingFace datasets to load files from disk by batches
+    audio_dataset = datasets.Dataset.from_dict({"audio": clips})
+    audio_dataset = audio_dataset.cast_column("audio", datasets.Audio(sampling_rate=sr))
+
+    # Get audio embeddings (features) for negative clips and save to .npy file
+    # Process files by batch and save to Numpy memory mapped file so that
+    # an array larger than the available system memory can be created
+    clip_size = clip_duration//sr  # the desired window size (in seconds) for the trained openWakeWord model
+    N_total = int(sum(durations)//clip_size) # maximum number of rows in mmap file
+    n_feature_cols = F.get_embedding_shape(clip_size)
+
+    output_array_shape = (N_total, n_feature_cols[0], n_feature_cols[1])
+    fp = open_memmap(output_file, mode='w+', dtype=np.float32, shape=output_array_shape)
+
+    row_counter = 0
+    for i in tqdm(np.arange(0, audio_dataset.num_rows, batch_size)):
+        # Load data in batches and shape into rectangular array
+        wav_data = [(j["array"]*32767).astype(np.int16) for j in audio_dataset[i:i+batch_size]["audio"]]
+        wav_data = stack_clips(wav_data, clip_size=clip_duration).astype(np.int16)
+        
+        # Compute features (increase ncpu argument for faster processing)
+        features = F.embed_clips(x=wav_data, batch_size=batch_size, ncpu=ncpu)
+        
+        # Save computed features to mmap array file (stopping once the desired size is reached)
+        if row_counter + features.shape[0] > N_total:
+            fp[row_counter:min(row_counter+features.shape[0], N_total), :, :] = features[0:N_total - row_counter, :, :]
+            fp.flush()
+            break
+        else:
+            fp[row_counter:row_counter+features.shape[0], :, :] = features
+            row_counter += features.shape[0]
+            fp.flush()
+            
+    # Trip empty rows from the mmapped array
+    openwakeword.data.trim_mmap(output_file)
+
+def compute_false_positive_validation_from_clips(clips, durations, clip_duration, output_file, batch_size=128, sr=16000, device="cpu", ncpu=1):
+    """
+    Computes audio features from a list of clips paths that produces Numpy arrays of shape (batch_size, samples)
+    containing 16-bit PCM audio data.
+
+    Args:
+        clips_paths : Array of clips paths.
+        clip_duration (float): The duration (in samples) of the audio produced by the generator.
+        output_file (str): The output file (.npy) containing the audio features. Note that this file
+                           will be written to using memmap arrays, so it can be substantially larger
+                           than the available system memory.
+        batch_size (int): The number of files to load, compute features, and write to mmap at a time.
+        sr (int): The sampling rate.
+        device (str): The device ("cpu" or "gpu") to use for computing features.
+        ncpu (int): The number of cores to use when process the audio features (if computing on CPU)
+
+    Returns:
+        None
+    """    
+    import datasets
+    from openwakeword.data import stack_clips
+    
+    F = AudioFeatures()
+    # Use HuggingFace datasets to load files from disk by batches
+    audio_dataset = datasets.Dataset.from_dict({"audio": clips})
+    audio_dataset = audio_dataset.cast_column("audio", datasets.Audio(sampling_rate=sr))
+
+    # Get audio embeddings (features) for negative clips and save to .npy file
+    # Process files by batch and save to Numpy memory mapped file so that
+    # an array larger than the available system memory can be created
+    clip_size = clip_duration//sr  # the desired window size (in seconds) for the trained openWakeWord model
+    N_total = int(sum(durations)//clip_size) # maximum number of rows in mmap file
+    n_feature_cols = F.get_embedding_shape(clip_size)
+
+    output_array_shape = (N_total, n_feature_cols[0], n_feature_cols[1])
+    fp = open_memmap(output_file, mode='w+', dtype=np.float32, shape=output_array_shape)
+
+    row_counter = 0
+    for i in tqdm(np.arange(0, audio_dataset.num_rows, batch_size)):
+        # Load data in batches and shape into rectangular array
+        wav_data = [(j["array"]*32767).astype(np.int16) for j in audio_dataset[i:i+batch_size]["audio"]]
+        wav_data = stack_clips(wav_data, clip_size=clip_duration).astype(np.int16)
+        
+        # Compute features (increase ncpu argument for faster processing)
+        features = F.embed_clips(x=wav_data, batch_size=batch_size, ncpu=ncpu)
+        
+        concatenated = np.concatenate(features, axis=0)
+        
+        # Save computed features to mmap array file (stopping once the desired size is reached)
+        if row_counter + concatenated.shape[0] > N_total:
+            fp[row_counter:min(row_counter+concatenated.shape[0], N_total), :] = concatenated[0:N_total - row_counter, :]
+            fp.flush()
+            break
+        else:
+            fp[row_counter:row_counter+concatenated.shape[0], :] = concatenated
+            row_counter += concatenated.shape[0]
+            fp.flush()  
+
+    # Trip empty rows from the mmapped array
+    openwakeword.data.trim_mmap(output_file)    
+
+#Get number of cpu cores
+def get_n_cpus(max_usage: float = 0.5):
+    if(max_usage>1):
+        max_usage=1
+    n_cpus = os.cpu_count()
+    if n_cpus is None:
+        n_cpus = 1
+    else:
+        n_cpus = int(n_cpus* max_usage)
+    return n_cpus
 
 # Function to download files from a URL with a progress bar
 def download_file(url, target_directory, file_size=None):

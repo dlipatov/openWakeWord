@@ -99,3 +99,29 @@ steps: 50000
 # The target false positive rate may not be achieved, and adjusting the maximum negative weight may be necessary
 max_negative_weight: 1500
 target_false_positives_per_hour: 0.2
+
+
+# Paths to pre-computed openwakeword features for positive and negative data. Each file must be a saved
+# .npy array (see the example notebook on manually training new models for details on how to create these).
+# There is no limit on the number of files but training speed will decrease as more
+# data will need to be read from disk for each additional file.
+# Also, there is a custom dataloader that uses memory-mapping with loading data, so the total size
+# of the files is not limited by the amount of available system memory (though this will result
+# in decreased training throughput depending on the speed of the underlying storage device). A fast
+# NVME SSD is recommended for optimal performance.
+
+feature_data_clips: 
+  "cv11": "./cv11/"
+  "fma": "./fma"
+  "cv16": "./cv16"
+  "positive": "./positive"
+
+false_positive_validation_clips: "./false_positive_clips"  
+
+skip_generated_adversarial_texts: False
+
+preferred_device: cpu
+
+custom_positive_train: "./custom_positive_train"
+
+custom_positive_test: "./custom_positive_train"

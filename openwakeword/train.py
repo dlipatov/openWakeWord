@@ -16,8 +16,9 @@ from tqdm import tqdm
 import yaml
 from pathlib import Path
 import openwakeword
-from openwakeword.data import generate_adversarial_texts, augment_clips, mmap_batch_generator
-from openwakeword.utils import compute_features_from_generator
+import datasets
+from openwakeword.data import generate_adversarial_texts, augment_clips, mmap_batch_generator, filter_audio_paths
+from openwakeword.utils import compute_features_from_generator, get_n_cpus, compute_features_from_clips, compute_false_positive_validation_from_clips
 from openwakeword.utils import AudioFeatures
 
 
@@ -617,6 +618,20 @@ if __name__ == '__main__':
         required=False
     )
     parser.add_argument(
+        "--compute_features",
+        help="Get audio embeddings (features) for clips and save to .npy files",
+        action="store_true",
+        default="False",
+        required=False
+    )
+    parser.add_argument(
+        "--compute_false_positive",
+        help="Get audio embeddings (features) for false positive validation clips and save to .npy file",
+        action="store_true",
+        default="False",
+        required=False
+    )
+    parser.add_argument(
         "--overwrite",
         help="Overwrite existing openwakeword features when the --augment_clips flag is used",
         action="store_true",
@@ -630,9 +645,25 @@ if __name__ == '__main__':
         default="False",
         required=False
     )
+    parser.add_argument(
+        "--export_model",
+        help="Export model from onnx to tflite",
+        action="store_true",
+        default="False",
+        required=False
+    )
 
     args = parser.parse_args()
     config = yaml.load(open(args.training_config, 'r').read(), yaml.Loader)
+
+    n_cpus = get_n_cpus(config["cpu_max_load"])
+    preferred_device = config["preferred_device"]
+    if preferred_device == "gpu":
+        if torch.cuda.is_available():
+            preferred_device = "gpu"
+            n_cpus = 1
+        else:
+            preferred_device = "cpu"
 
     # imports Piper for synthetic sample generation
     sys.path.insert(0, os.path.abspath(config["piper_sample_generator_path"]))
@@ -671,7 +702,9 @@ if __name__ == '__main__':
                 batch_size=config["tts_batch_size"],
                 noise_scales=[0.98], noise_scale_ws=[0.98], length_scales=[0.75, 1.0, 1.25],
                 output_dir=positive_train_output_dir, auto_reduce_batch_size=True,
-                file_names=[uuid.uuid4().hex + ".wav" for i in range(config["n_samples"])]
+                file_names=[uuid.uuid4().hex + ".wav" for i in range(config["n_samples"])],
+                model=config["piper_model_path"],
+                max_speakers=config["piper_max_speakers"]
             )
             torch.cuda.empty_cache()
         else:
@@ -686,7 +719,10 @@ if __name__ == '__main__':
             generate_samples(text=config["target_phrase"], max_samples=config["n_samples_val"]-n_current_samples,
                              batch_size=config["tts_batch_size"],
                              noise_scales=[1.0], noise_scale_ws=[1.0], length_scales=[0.75, 1.0, 1.25],
-                             output_dir=positive_test_output_dir, auto_reduce_batch_size=True)
+                             output_dir=positive_test_output_dir, auto_reduce_batch_size=True,
+                             model=config["piper_model_path"],
+                             max_speakers=config["piper_max_speakers"]                             
+            )
             torch.cuda.empty_cache()
         else:
             logging.warning(f"Skipping generation of positive clips testing, as ~{config['n_samples_val']} already exist")
@@ -698,17 +734,22 @@ if __name__ == '__main__':
         n_current_samples = len(os.listdir(negative_train_output_dir))
         if n_current_samples <= 0.95*config["n_samples"]:
             adversarial_texts = config["custom_negative_phrases"]
-            for target_phrase in config["target_phrase"]:
-                adversarial_texts.extend(generate_adversarial_texts(
-                    input_text=target_phrase,
-                    N=config["n_samples"]//len(config["target_phrase"]),
-                    include_partial_phrase=1.0,
-                    include_input_words=0.2))
+            for target_phrase in config["target_phrase"]:                
+                if config["skip_generated_adversarial_texts"] is not True:
+                    adversarial_texts.extend(generate_adversarial_texts(
+                        input_text=target_phrase,
+                        N=config["n_samples"]//len(config["target_phrase"]),
+                        include_partial_phrase=1.0,
+                        include_input_words=0.2))
+            if len(adversarial_texts)==0:
+                raise ValueError("Add custom_negative_phrases or disable skipping of adversarial texts generattion skip_generated_adversarial_texts: False")
             generate_samples(text=adversarial_texts, max_samples=config["n_samples"]-n_current_samples,
                              batch_size=config["tts_batch_size"]//7,
                              noise_scales=[0.98], noise_scale_ws=[0.98], length_scales=[0.75, 1.0, 1.25],
                              output_dir=negative_train_output_dir, auto_reduce_batch_size=True,
-                             file_names=[uuid.uuid4().hex + ".wav" for i in range(config["n_samples"])]
+                             file_names=[uuid.uuid4().hex + ".wav" for i in range(config["n_samples"])],
+                             model=config["piper_model_path"],
+                             max_speakers=config["piper_max_speakers"]
                              )
             torch.cuda.empty_cache()
         else:
@@ -722,15 +763,19 @@ if __name__ == '__main__':
         if n_current_samples <= 0.95*config["n_samples_val"]:
             adversarial_texts = config["custom_negative_phrases"]
             for target_phrase in config["target_phrase"]:
-                adversarial_texts.extend(generate_adversarial_texts(
-                    input_text=target_phrase,
-                    N=config["n_samples_val"]//len(config["target_phrase"]),
-                    include_partial_phrase=1.0,
-                    include_input_words=0.2))
+                if config["skip_generated_adversarial_texts"] is not True:
+                    adversarial_texts.extend(generate_adversarial_texts(
+                        input_text=target_phrase,
+                        N=config["n_samples_val"]//len(config["target_phrase"]),
+                        include_partial_phrase=1.0,
+                        include_input_words=0.2))
             generate_samples(text=adversarial_texts, max_samples=config["n_samples_val"]-n_current_samples,
                              batch_size=config["tts_batch_size"]//7,
                              noise_scales=[1.0], noise_scale_ws=[1.0], length_scales=[0.75, 1.0, 1.25],
-                             output_dir=negative_test_output_dir, auto_reduce_batch_size=True)
+                             output_dir=negative_test_output_dir, auto_reduce_batch_size=True,
+                             model=config["piper_model_path"],
+                             max_speakers=config["piper_max_speakers"]
+            )
             torch.cuda.empty_cache()
         else:
             logging.warning(f"Skipping generation of negative clips for testing, as ~{config['n_samples_val']} already exist")
@@ -749,17 +794,77 @@ if __name__ == '__main__':
         config["total_length"] = 32000  # set a minimum of 32000 samples (2 seconds)
     elif abs(config["total_length"] - 32000) <= 4000:
         config["total_length"] = 32000
+    
+    with open(args.training_config, 'w') as file:
+        documents = yaml.dump(config, file)
+                
+    # Generate features
+    if args.compute_features is True:
+        for key in config["feature_data_clips"]:
+            path = config["feature_data_clips"][key]
+            output_file = os.path.join(feature_save_dir, key + ".npy")
+            if not os.path.exists(output_file) or args.overwrite is True:
+                logging.info("#"*50 + "\nFiltering clips from path \n" + path + "\n" + "#"*50)
+                clips, durations = filter_audio_paths(
+                    [
+                        path
+                    ],
+                    min_length_secs = 1.0, # minimum clip length in seconds
+                    max_length_secs = 60*30, # maximum clip length in seconds
+                    duration_method = "header", # use the file header to calculate duration
+                    glob_filter="*.wav"
+                )
+                
+                logging.info("#"*50 + "\nComputing openwakeword features from path \n" + path + "\n" + "#"*50)
+                compute_features_from_clips(clips, durations, config["total_length"], output_file, batch_size=1024,ncpu=n_cpus)                
+            else:
+                logging.warning("Openwakeword features already exist for path \n" + path + "\n Skipping feature generation")
 
+            config["feature_data_files"][key] = output_file
+            config["batch_n_per_class"][key] = 1024
+            with open(args.training_config, 'w') as file:
+                documents = yaml.dump(config, file)
+                
+    # Generate features
+    if args.compute_false_positive is True:
+        path = config["false_positive_validation_clips"]    
+        output_file = os.path.join(feature_save_dir, "false_positive_validation_features.npy")
+        if not os.path.exists(output_file) or args.overwrite is True:
+            logging.info("#"*50 + "\nFiltering clips from path \n" + path + "\n" + "#"*50)
+            clips, durations = filter_audio_paths(
+                [
+                    path
+                ],
+                min_length_secs = 1.0, # minimum clip length in seconds
+                max_length_secs = 60*30, # maximum clip length in seconds
+                duration_method = "header", # use the file header to calculate duration
+                glob_filter="*.wav"
+            )
+            
+            logging.info("#"*50 + "\nComputing false positive features from path \n" + path + "\n" + "#"*50)
+            compute_false_positive_validation_from_clips(clips, durations, config["total_length"], output_file, batch_size=1024,ncpu=n_cpus)                
+            config["false_positive_validation_data_path"] = output_file            
+        else:
+            logging.warning("Openwakeword features already exist for path \n" + path + "\n Skipping feature generation")
+        
+        with open(args.training_config, 'w') as file:
+            documents = yaml.dump(config, file)
+                    
     # Do Data Augmentation
     if args.augment_clips is True:
         if not os.path.exists(os.path.join(feature_save_dir, "positive_features_train.npy")) or args.overwrite is True:
             positive_clips_train = [str(i) for i in Path(positive_train_output_dir).glob("*.wav")]*config["augmentation_rounds"]
+            if "custom_positive_train" in config:
+                positive_clips_train.extend([str(i) for i in Path(config["custom_positive_train"]).glob("*.wav")]*config["augmentation_rounds"])
+            
             positive_clips_train_generator = augment_clips(positive_clips_train, total_length=config["total_length"],
                                                            batch_size=config["augmentation_batch_size"],
                                                            background_clip_paths=background_paths,
                                                            RIR_paths=rir_paths)
 
             positive_clips_test = [str(i) for i in Path(positive_test_output_dir).glob("*.wav")]*config["augmentation_rounds"]
+            if "custom_positive_test" in config:
+                positive_clips_test.extend([str(i) for i in Path(config["custom_positive_test"]).glob("*.wav")]*config["augmentation_rounds"])
             positive_clips_test_generator = augment_clips(positive_clips_test, total_length=config["total_length"],
                                                           batch_size=config["augmentation_batch_size"],
                                                           background_clip_paths=background_paths,
@@ -779,34 +884,30 @@ if __name__ == '__main__':
 
             # Compute features and save to disk via memmapped arrays
             logging.info("#"*50 + "\nComputing openwakeword features for generated samples\n" + "#"*50)
-            n_cpus = os.cpu_count()
-            if n_cpus is None:
-                n_cpus = 1
-            else:
-                n_cpus = n_cpus//2
+
             compute_features_from_generator(positive_clips_train_generator, n_total=len(os.listdir(positive_train_output_dir)),
                                             clip_duration=config["total_length"],
                                             output_file=os.path.join(feature_save_dir, "positive_features_train.npy"),
-                                            device="gpu" if torch.cuda.is_available() else "cpu",
-                                            ncpu=n_cpus if not torch.cuda.is_available() else 1)
+                                            device=preferred_device,
+                                            ncpu=n_cpus)
 
             compute_features_from_generator(negative_clips_train_generator, n_total=len(os.listdir(negative_train_output_dir)),
                                             clip_duration=config["total_length"],
                                             output_file=os.path.join(feature_save_dir, "negative_features_train.npy"),
-                                            device="gpu" if torch.cuda.is_available() else "cpu",
-                                            ncpu=n_cpus if not torch.cuda.is_available() else 1)
+                                            device=preferred_device,
+                                            ncpu=n_cpus)
 
             compute_features_from_generator(positive_clips_test_generator, n_total=len(os.listdir(positive_test_output_dir)),
                                             clip_duration=config["total_length"],
                                             output_file=os.path.join(feature_save_dir, "positive_features_test.npy"),
-                                            device="gpu" if torch.cuda.is_available() else "cpu",
-                                            ncpu=n_cpus if not torch.cuda.is_available() else 1)
+                                            device=preferred_device,
+                                            ncpu=n_cpus)
 
             compute_features_from_generator(negative_clips_test_generator, n_total=len(os.listdir(negative_test_output_dir)),
                                             clip_duration=config["total_length"],
                                             output_file=os.path.join(feature_save_dir, "negative_features_test.npy"),
-                                            device="gpu" if torch.cuda.is_available() else "cpu",
-                                            ncpu=n_cpus if not torch.cuda.is_available() else 1)
+                                            device=preferred_device,
+                                            ncpu=n_cpus)
         else:
             logging.warning("Openwakeword features already exist, skipping data augmentation and feature generation")
 
@@ -856,11 +957,6 @@ if __name__ == '__main__':
             def __iter__(self):
                 return self.generator
 
-        n_cpus = os.cpu_count()
-        if n_cpus is None:
-            n_cpus = 1
-        else:
-            n_cpus = n_cpus//2
         X_train = torch.utils.data.DataLoader(IterDataset(batch_generator),
                                               batch_size=None, num_workers=n_cpus, prefetch_factor=16)
 
@@ -898,5 +994,9 @@ if __name__ == '__main__':
         oww.export_model(model=best_model, model_name=config["model_name"], output_dir=config["output_dir"])
 
         # Convert the model from onnx to tflite format
+        convert_onnx_to_tflite(os.path.join(config["output_dir"], config["model_name"] + ".onnx"),
+                               os.path.join(config["output_dir"], config["model_name"] + ".tflite"))
+
+    if args.export_model is True:
         convert_onnx_to_tflite(os.path.join(config["output_dir"], config["model_name"] + ".onnx"),
                                os.path.join(config["output_dir"], config["model_name"] + ".tflite"))
