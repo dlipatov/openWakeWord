@@ -46,5 +46,5 @@ config["custom_positive_test"] = os.path.abspath("../custom_positive_test")
 config["false_positive_validation_data_path"] = ""
 config["feature_data_files"] = {}
 
-with open('../nafanya.yaml', 'w') as file:
+with open('./nafanya.yaml', 'w') as file:
     documents = yaml.dump(config, file)
