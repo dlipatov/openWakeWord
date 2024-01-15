@@ -682,10 +682,11 @@ def compute_false_positive_validation_from_clips(clips, durations, clip_duration
     # Process files by batch and save to Numpy memory mapped file so that
     # an array larger than the available system memory can be created
     clip_size = clip_duration//sr  # the desired window size (in seconds) for the trained openWakeWord model
-    N_total = int(sum(durations)//clip_size) # maximum number of rows in mmap file
     n_feature_cols = F.get_embedding_shape(clip_size)
+    # we wil lose some data at the end of file
+    N_total = int(sum(durations)//clip_size + (1 if sum(durations)%clip_size>0 else 0))*n_feature_cols[0] # maximum number of rows in mmap file
 
-    output_array_shape = (N_total, n_feature_cols[0], n_feature_cols[1])
+    output_array_shape = (N_total, n_feature_cols[1])
     fp = open_memmap(output_file, mode='w+', dtype=np.float32, shape=output_array_shape)
 
     row_counter = 0
@@ -703,14 +704,12 @@ def compute_false_positive_validation_from_clips(clips, durations, clip_duration
         if row_counter + concatenated.shape[0] > N_total:
             fp[row_counter:min(row_counter+concatenated.shape[0], N_total), :] = concatenated[0:N_total - row_counter, :]
             fp.flush()
+            row_counter = N_total
             break
         else:
             fp[row_counter:row_counter+concatenated.shape[0], :] = concatenated
             row_counter += concatenated.shape[0]
-            fp.flush()  
-
-    # Trip empty rows from the mmapped array
-    openwakeword.data.trim_mmap(output_file)    
+            fp.flush()
 
 #Get number of cpu cores
 def get_n_cpus(max_usage: float = 0.5):
