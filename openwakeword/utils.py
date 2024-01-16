@@ -614,7 +614,7 @@ def compute_features_from_clips(clips, durations, clip_duration, output_file, ba
     import datasets
     from openwakeword.data import stack_clips
     
-    F = AudioFeatures()
+    F = AudioFeatures(device=device)
     # Use HuggingFace datasets to load files from disk by batches
     audio_dataset = datasets.Dataset.from_dict({"audio": clips})
     audio_dataset = audio_dataset.cast_column("audio", datasets.Audio(sampling_rate=sr))
@@ -673,7 +673,7 @@ def compute_false_positive_validation_from_clips(clips, durations, clip_duration
     import datasets
     from openwakeword.data import stack_clips
     
-    F = AudioFeatures()
+    F = AudioFeatures(device=device)
     # Use HuggingFace datasets to load files from disk by batches
     audio_dataset = datasets.Dataset.from_dict({"audio": clips})
     audio_dataset = audio_dataset.cast_column("audio", datasets.Audio(sampling_rate=sr))
