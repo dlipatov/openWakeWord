@@ -5,7 +5,7 @@ config = yaml.load(open("./examples/custom_model.yml", 'r').read(), yaml.Loader)
 
 # Modify values in the config and save a new version
 config["cpu_max_load"] = 0.85
-config["preferred_device"] = "cpu"
+config["preferred_device"] = "gpu"
 config["custom_negative_phrases"] = [
     "Нифиня",
     "Афоня",
@@ -17,7 +17,7 @@ config["custom_negative_phrases"] = [
     "на фанере", 
     "Фефеня"
 ]
-config["target_phrase"] = ["Нафаня!"]
+config["target_phrase"] = ["Нафаня!", "Наафаня"]
 config["model_name"] = "nafanya"
 config["n_samples"] = 1000
 config["n_samples_val"] = 1000
