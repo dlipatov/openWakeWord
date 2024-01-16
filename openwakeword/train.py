@@ -800,23 +800,39 @@ if __name__ == '__main__':
                 
     # Generate features
     if args.compute_features is True:
+        import csv
         for key in config["feature_data_clips"]:
             path = config["feature_data_clips"][key]
             output_file = os.path.join(feature_save_dir, key + ".npy")
             if not os.path.exists(output_file) or args.overwrite is True:
-                logging.info("#"*50 + "\nFiltering clips from path \n" + path + "\n" + "#"*50)
-                clips, durations = filter_audio_paths(
-                    [
-                        path
-                    ],
-                    min_length_secs = 1.0, # minimum clip length in seconds
-                    max_length_secs = 60*30, # maximum clip length in seconds
-                    duration_method = "header", # use the file header to calculate duration
-                    glob_filter="*.wav"
-                )
+                descr_path = os.path.join(path, key+'.csv')
+                if not os.path.exists(descr_path):               
+                    logging.info("#"*50 + "\nFiltering clips from path \n" + path + "\n" + "#"*50)
+                    clips, durations = filter_audio_paths(
+                        [
+                            path
+                        ],
+                        min_length_secs = 1.0, # minimum clip length in seconds
+                        max_length_secs = 60*30, # maximum clip length in seconds
+                        duration_method = "header", # use the file header to calculate duration
+                        glob_filter="*.wav"
+                    )
+                    
+                    tuples = [(os.path.basename(i),j) for i,j in zip(clips, durations)]
+                    with open(descr_path,'w') as f:
+                        writer = csv.writer(f)
+                        for pair in tuples:
+                            writer.writerow(pair)
+                else:
+                    clips,durations = [],[]
+                    with open(descr_path) as f:
+                        reader = csv.reader(f)
+                        for row in reader:
+                            clips.append(os.path.join(path,row[0]))
+                            durations.append(float(row[1]))
                 
                 logging.info("#"*50 + "\nComputing openwakeword features from path \n" + path + "\n" + "#"*50)
-                compute_features_from_clips(clips, durations, config["total_length"], output_file, batch_size=1024,ncpu=n_cpus)                
+                compute_features_from_clips(clips, durations, config["total_length"], output_file, device=preferred_device, batch_size=1024,ncpu=n_cpus)                
             else:
                 logging.warning("Openwakeword features already exist for path \n" + path + "\n Skipping feature generation")
 
@@ -842,7 +858,7 @@ if __name__ == '__main__':
             )
             
             logging.info("#"*50 + "\nComputing false positive features from path \n" + path + "\n" + "#"*50)
-            compute_false_positive_validation_from_clips(clips, durations, config["total_length"], output_file, batch_size=1024,ncpu=n_cpus)                
+            compute_false_positive_validation_from_clips(clips, durations, config["total_length"], output_file, device=preferred_device, batch_size=1024,ncpu=n_cpus)                
             config["false_positive_validation_data_path"] = output_file            
         else:
             logging.warning("Openwakeword features already exist for path \n" + path + "\n Skipping feature generation")
