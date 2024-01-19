@@ -17,7 +17,7 @@ config["custom_negative_phrases"] = [
     "на фанере", 
     "Фефеня"
 ]
-config["target_phrase"] = ["Нафаня!", "Наафаня"]
+config["target_phrase"] = ["Нафaня!", "Нафaня"]
 config["model_name"] = "nafanya"
 config["n_samples"] = 1000
 config["n_samples_val"] = 1000
